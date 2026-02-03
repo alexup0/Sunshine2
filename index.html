@@ -33,7 +33,7 @@
         }
 
         .container {
-            max-width: 800px;
+            max-width: 1000px;
             margin: 0 auto;
             background: white;
             border-radius: 20px;
@@ -86,6 +86,13 @@
             gap: 15px;
         }
 
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
         button {
             width: 100%;
             padding: 15px;
@@ -93,10 +100,9 @@
             color: white;
             border: none;
             border-radius: 10px;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            margin-top: 10px;
             transition: transform 0.2s;
         }
 
@@ -104,18 +110,57 @@
             transform: scale(0.98);
         }
 
+        .btn-location {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
         #result {
             margin-top: 30px;
             display: none;
         }
 
-        .chart-container {
-            position: relative;
-            height: 400px;
+        .table-container {
+            overflow-x: auto;
             margin: 20px 0;
-            background: #f5f5f5;
             border-radius: 10px;
-            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+
+        tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .polar-day {
+            background-color: #fff9c4 !important;
+        }
+
+        .polar-night {
+            background-color: #e0e0e0 !important;
         }
 
         .info-card {
@@ -162,6 +207,21 @@
             display: none;
         }
 
+        .success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
         @media (max-width: 600px) {
             .container {
                 padding: 20px;
@@ -171,8 +231,13 @@
                 font-size: 24px;
             }
 
-            .chart-container {
-                height: 300px;
+            .button-group {
+                grid-template-columns: 1fr;
+            }
+
+            th, td {
+                padding: 8px 5px;
+                font-size: 11px;
             }
         }
     </style>
@@ -204,18 +269,44 @@
             </div>
         </div>
 
-        <button onclick="calculateLight()">🔍 Построить график</button>
+        <div class="button-group">
+            <button class="btn-location" onclick="getLocation()">📍 Моё местоположение</button>
+            <button onclick="calculateLight()">🔍 Построить таблицу</button>
+        </div>
 
         <div class="error" id="error"></div>
+        <div class="success" id="success"></div>
 
         <div id="result">
-            <div class="chart-container">
-                <canvas id="chart"></canvas>
+            <div class="info-card" id="locationInfo" style="display:none;">
+                <h3 style="margin-bottom: 10px; color: #1a237e;">📍 Местоположение</h3>
+                <div id="locationDetails"></div>
             </div>
 
             <div class="info-card" id="polarInfo" style="display:none;">
                 <h3 style="margin-bottom: 10px; color: #1a237e;">⚠️ Особые периоды</h3>
                 <div id="polarDetails"></div>
+            </div>
+
+            <div class="table-container">
+                <table id="dataTable">
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Астр. утро</th>
+                            <th>Навиг. утро</th>
+                            <th>Гражд. утро</th>
+                            <th>Восход</th>
+                            <th>Заход</th>
+                            <th>Гражд. вечер</th>
+                            <th>Навиг. вечер</th>
+                            <th>Астр. вечер</th>
+                            <th>Тип дня</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -312,7 +403,7 @@
     </script>
 
     <script>
-        // Устанавливаем значения по умолчанию (год вперед от сегодня)
+        // Устанавливаем значения по умолчанию
         window.onload = function() {
             const today = new Date();
             const nextYear = new Date(today);
@@ -326,6 +417,50 @@
                 navigator.serviceWorker.register('sw.js');
             }
         };
+
+        // Получение геолокации
+        function getLocation() {
+            const errorDiv = document.getElementById('error');
+            const successDiv = document.getElementById('success');
+
+            if (!navigator.geolocation) {
+                errorDiv.textContent = '❌ Геолокация не поддерживается вашим браузером';
+                errorDiv.style.display = 'block';
+                successDiv.style.display = 'none';
+                return;
+            }
+
+            errorDiv.style.display = 'none';
+            successDiv.textContent = '📍 Определяю местоположение...';
+            successDiv.style.display = 'block';
+
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude.toFixed(4);
+                    const lon = position.coords.longitude.toFixed(4);
+
+                    document.getElementById('latitude').value = lat;
+                    document.getElementById('longitude').value = lon;
+
+                    successDiv.textContent = `✅ Местоположение определено: ${lat}, ${lon}`;
+
+                    // Автоматически строим таблицу
+                    setTimeout(() => {
+                        calculateLight();
+                    }, 500);
+                },
+                function(error) {
+                    errorDiv.textContent = '❌ Не удалось определить местоположение. Проверьте разрешения.';
+                    errorDiv.style.display = 'block';
+                    successDiv.style.display = 'none';
+                }
+            );
+        }
+
+        function formatTime(date) {
+            if (!date || isNaN(date.getTime())) return '—';
+            return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        }
 
         function calculateLight() {
             const lat = parseFloat(document.getElementById('latitude').value);
@@ -363,14 +498,16 @@
                 const dateStr = currentDate.toISOString().split('T')[0];
 
                 // Определяем тип освещенности
-                let type = 'normal';
+                let type = 'Обычный';
+                let rowClass = '';
                 if (!times.sunrise || !times.sunset || isNaN(times.sunrise.getTime()) || isNaN(times.sunset.getTime())) {
-                    // Проверяем высоту солнца в полдень
                     const noonPos = SunCalc.getPosition(times.solarNoon, lat, lon);
                     if (noonPos.altitude > 0) {
-                        type = 'polarDay';
+                        type = '🌞 Полярный день';
+                        rowClass = 'polar-day';
                     } else {
-                        type = 'polarNight';
+                        type = '🌑 Полярная ночь';
+                        rowClass = 'polar-night';
                     }
                 }
 
@@ -384,7 +521,8 @@
                     dusk: times.dusk,
                     nauticalDusk: times.nauticalDusk,
                     night: times.night,
-                    type: type
+                    type: type,
+                    rowClass: rowClass
                 });
 
                 currentDate.setDate(currentDate.getDate() + 1);
@@ -393,7 +531,7 @@
             // Находим периоды полярных дней/ночей
             let currentPolar = null;
             data.forEach((d, i) => {
-                if (d.type !== 'normal') {
+                if (d.type !== 'Обычный') {
                     if (!currentPolar || currentPolar.type !== d.type) {
                         if (currentPolar) polarInfo.push(currentPolar);
                         currentPolar = { type: d.type, start: d.date, end: d.date };
@@ -411,7 +549,49 @@
 
             // Отображаем результат
             document.getElementById('result').style.display = 'block';
-            drawChart(data);
+
+            // Заполняем таблицу
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            data.forEach(d => {
+                const row = tbody.insertRow();
+                row.className = d.rowClass;
+
+                row.insertCell(0).textContent = d.date;
+                row.insertCell(1).textContent = formatTime(d.nightEnd);
+                row.insertCell(2).textContent = formatTime(d.nauticalDawn);
+                row.insertCell(3).textContent = formatTime(d.dawn);
+                row.insertCell(4).textContent = formatTime(d.sunrise);
+                row.insertCell(5).textContent = formatTime(d.sunset);
+                row.insertCell(6).textContent = formatTime(d.dusk);
+                row.insertCell(7).textContent = formatTime(d.nauticalDusk);
+                row.insertCell(8).textContent = formatTime(d.night);
+                row.insertCell(9).textContent = d.type;
+            });
+
+            // Отображаем информацию о местоположении
+            const locationInfoDiv = document.getElementById('locationInfo');
+            const locationDetailsDiv = document.getElementById('locationDetails');
+            locationInfoDiv.style.display = 'block';
+            locationDetailsDiv.innerHTML = `
+                <div class="info-row">
+                    <span class="info-label">Широта</span>
+                    <span class="info-value">${lat}°</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Долгота</span>
+                    <span class="info-value">${lon}°</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Период</span>
+                    <span class="info-value">${data[0].date} — ${data[data.length-1].date}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Всего дней</span>
+                    <span class="info-value">${data.length}</span>
+                </div>
+            `;
 
             // Отображаем информацию о полярных периодах
             const polarInfoDiv = document.getElementById('polarInfo');
@@ -419,158 +599,17 @@
             if (polarInfo.length > 0) {
                 polarInfoDiv.style.display = 'block';
                 polarDetailsDiv.innerHTML = polarInfo.map(p => {
-                    const icon = p.type === 'polarDay' ? '🌞' : '🌑';
-                    const text = p.type === 'polarDay' ? 'Полярный день' : 'Полярная ночь';
                     return `<div class="info-row">
-                        <span class="info-label">${icon} ${text}</span>
+                        <span class="info-label">${p.type}</span>
                         <span class="info-value">${p.start} — ${p.end}</span>
                     </div>`;
                 }).join('');
             } else {
                 polarInfoDiv.style.display = 'none';
             }
-        }
 
-        function drawChart(data) {
-            const canvas = document.getElementById('chart');
-            const ctx = canvas.getContext('2d');
-            const container = canvas.parentElement;
-
-            // Устанавливаем размер canvas
-            canvas.width = container.offsetWidth;
-            canvas.height = container.offsetHeight;
-
-            const w = canvas.width;
-            const h = canvas.height;
-            const padding = 60;
-            const chartW = w - padding * 2;
-            const chartH = h - padding * 2;
-
-            // Очищаем canvas
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, w, h);
-
-            // Рисуем фон графика
-            ctx.fillStyle = '#f5f5f5';
-            ctx.fillRect(padding, padding, chartW, chartH);
-
-            // Временная шкала (0-24 часа)
-            const hours = 24;
-
-            // Рисуем горизонтальные линии (часы)
-            ctx.strokeStyle = '#e0e0e0';
-            ctx.lineWidth = 1;
-            for (let i = 0; i <= hours; i += 3) {
-                const y = padding + (i / hours) * chartH;
-                ctx.beginPath();
-                ctx.moveTo(padding, y);
-                ctx.lineTo(padding + chartW, y);
-                ctx.stroke();
-
-                ctx.fillStyle = '#666';
-                ctx.font = '12px sans-serif';
-                ctx.textAlign = 'right';
-                ctx.fillText(i + ':00', padding - 10, y + 4);
-            }
-
-            // Рисуем данные
-            const step = chartW / data.length;
-
-            data.forEach((d, i) => {
-                const x = padding + i * step;
-
-                if (d.type === 'polarDay') {
-                    // Полярный день - весь день светло
-                    ctx.fillStyle = 'rgba(255, 235, 59, 0.7)';
-                    ctx.fillRect(x, padding, step, chartH);
-                } else if (d.type === 'polarNight') {
-                    // Полярная ночь - весь день темно
-                    ctx.fillStyle = 'rgba(30, 30, 50, 0.8)';
-                    ctx.fillRect(x, padding, step, chartH);
-                } else {
-                    // Обычный день
-                    const timeToY = (time) => {
-                        if (!time || isNaN(time.getTime())) return null;
-                        const hour = time.getHours() + time.getMinutes() / 60;
-                        return padding + (hour / hours) * chartH;
-                    };
-
-                    const nightEndY = timeToY(d.nightEnd);
-                    const nauticalDawnY = timeToY(d.nauticalDawn);
-                    const dawnY = timeToY(d.dawn);
-                    const sunriseY = timeToY(d.sunrise);
-                    const sunsetY = timeToY(d.sunset);
-                    const duskY = timeToY(d.dusk);
-                    const nauticalDuskY = timeToY(d.nauticalDusk);
-                    const nightY = timeToY(d.night);
-
-                    // Ночь (полная темнота)
-                    ctx.fillStyle = 'rgba(30, 30, 50, 0.9)';
-                    if (nightEndY) ctx.fillRect(x, padding, step, nightEndY - padding);
-                    if (nightY) ctx.fillRect(x, nightY, step, padding + chartH - nightY);
-
-                    // Астрономические сумерки
-                    ctx.fillStyle = 'rgba(60, 60, 100, 0.7)';
-                    if (nightEndY && nauticalDawnY) ctx.fillRect(x, nightEndY, step, nauticalDawnY - nightEndY);
-                    if (nauticalDuskY && nightY) ctx.fillRect(x, nauticalDuskY, step, nightY - nauticalDuskY);
-
-                    // Навигационные сумерки
-                    ctx.fillStyle = 'rgba(100, 100, 150, 0.6)';
-                    if (nauticalDawnY && dawnY) ctx.fillRect(x, nauticalDawnY, step, dawnY - nauticalDawnY);
-                    if (duskY && nauticalDuskY) ctx.fillRect(x, duskY, step, nauticalDuskY - duskY);
-
-                    // Гражданские сумерки
-                    ctx.fillStyle = 'rgba(150, 150, 200, 0.5)';
-                    if (dawnY && sunriseY) ctx.fillRect(x, dawnY, step, sunriseY - dawnY);
-                    if (sunsetY && duskY) ctx.fillRect(x, sunsetY, step, duskY - sunsetY);
-
-                    // День (светло)
-                    ctx.fillStyle = 'rgba(255, 235, 59, 0.7)';
-                    if (sunriseY && sunsetY) ctx.fillRect(x, sunriseY, step, sunsetY - sunriseY);
-                }
-            });
-
-            // Подписи дат (каждые N дней)
-            ctx.fillStyle = '#666';
-            ctx.font = '10px sans-serif';
-            ctx.textAlign = 'center';
-            const labelStep = Math.max(1, Math.floor(data.length / 10));
-            for (let i = 0; i < data.length; i += labelStep) {
-                const x = padding + i * step;
-                const dateStr = data[i].date.substring(5); // MM-DD
-                ctx.save();
-                ctx.translate(x, h - 10);
-                ctx.rotate(-Math.PI / 4);
-                ctx.fillText(dateStr, 0, 0);
-                ctx.restore();
-            }
-
-            // Заголовок
-            ctx.fillStyle = '#333';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('График освещенности', w / 2, 20);
-
-            // Легенда
-            const legendX = w - 200;
-            const legendY = padding + 10;
-            const legends = [
-                { color: 'rgba(255, 235, 59, 0.7)', text: 'День' },
-                { color: 'rgba(150, 150, 200, 0.5)', text: 'Гражд. сумерки' },
-                { color: 'rgba(100, 100, 150, 0.6)', text: 'Навиг. сумерки' },
-                { color: 'rgba(60, 60, 100, 0.7)', text: 'Астрон. сумерки' },
-                { color: 'rgba(30, 30, 50, 0.9)', text: 'Ночь' }
-            ];
-
-            ctx.font = '11px sans-serif';
-            ctx.textAlign = 'left';
-            legends.forEach((leg, i) => {
-                const y = legendY + i * 20;
-                ctx.fillStyle = leg.color;
-                ctx.fillRect(legendX, y, 15, 15);
-                ctx.fillStyle = '#333';
-                ctx.fillText(leg.text, legendX + 20, y + 11);
-            });
+            // Прокручиваем к результату
+            document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     </script>
 </body>
