@@ -142,6 +142,8 @@
             margin: 20px 0;
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-height: 500px;
+            overflow-y: auto;
         }
 
         table {
@@ -211,14 +213,6 @@
             color: #333;
         }
 
-        .alert {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 15px;
-            border-radius: 5px;
-            margin-top: 15px;
-        }
-
         .error {
             background: #f8d7da;
             border-left: 4px solid #dc3545;
@@ -241,6 +235,7 @@
             text-align: center;
             padding: 20px;
             color: #666;
+            font-size: 16px;
         }
 
         @media (max-width: 600px) {
@@ -314,7 +309,9 @@
                 <button class="btn-download" onclick="downloadExcel()">📥 Скачать Excel</button>
             </div>
 
-            <div class="table-container">
+            <div class="loading" id="loading">⏳ Вычисляю данные...</div>
+
+            <div class="table-container" id="tableContainer" style="display:none;">
                 <table id="dataTable">
                     <thead>
                         <tr>
@@ -436,23 +433,44 @@
 
         // Устанавливаем значения по умолчанию
         window.onload = function() {
-            const today = new Date();
-            const nextYear = new Date(today);
-            nextYear.setFullYear(today.getFullYear() + 1);
+            console.log('Приложение загружено');
 
-            document.getElementById('startDate').value = today.toISOString().split('T')[0];
-            document.getElementById('endDate').value = nextYear.toISOString().split('T')[0];
+            const today = new Date();
+            const nextMonth = new Date(today);
+            nextMonth.setMonth(today.getMonth() + 1);
+
+            const todayStr = today.toISOString().split('T')[0];
+            const nextMonthStr = nextMonth.toISOString().split('T')[0];
+
+            document.getElementById('startDate').value = todayStr;
+            document.getElementById('endDate').value = nextMonthStr;
+
+            console.log('Даты установлены:', todayStr, '-', nextMonthStr);
 
             // Регистрируем Service Worker
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('sw.js').catch(function(err) {
-                    console.log('Service Worker registration failed: ', err);
-                });
+                navigator.serviceWorker.register('sw.js')
+                    .then(function(registration) {
+                        console.log('Service Worker зарегистрирован');
+                    })
+                    .catch(function(err) {
+                        console.log('Service Worker ошибка:', err);
+                    });
             }
+        };
+
+        // Обработка ошибок
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = '❌ Ошибка: ' + msg;
+            errorDiv.style.display = 'block';
+            console.error('Ошибка:', msg, 'Строка:', lineNo);
+            return false;
         };
 
         // Получение геолокации
         function getLocation() {
+            console.log('Запрос геолокации');
             const errorDiv = document.getElementById('error');
             const successDiv = document.getElementById('success');
 
@@ -472,6 +490,8 @@
                     const lat = position.coords.latitude.toFixed(4);
                     const lon = position.coords.longitude.toFixed(4);
 
+                    console.log('Координаты получены:', lat, lon);
+
                     document.getElementById('latitude').value = lat;
                     document.getElementById('longitude').value = lon;
 
@@ -483,6 +503,7 @@
                     }, 500);
                 },
                 function(error) {
+                    console.error('Ошибка геолокации:', error);
                     let errorMsg = '❌ Не удалось определить местоположение. ';
                     if (error.code === 1) {
                         errorMsg += 'Разрешите доступ к геолокации в настройках Safari.';
@@ -500,200 +521,277 @@
 
         function formatTime(date) {
             if (!date || isNaN(date.getTime())) return '—';
-            return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return hours + ':' + minutes;
         }
 
         function formatTimeForExport(date) {
             if (!date || isNaN(date.getTime())) return '';
-            return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            return hours + ':' + minutes + ':' + seconds;
         }
 
         function calculateLight() {
-            const lat = parseFloat(document.getElementById('latitude').value);
-            const lon = parseFloat(document.getElementById('longitude').value);
-            const startDateInput = document.getElementById('startDate').value;
-            const endDateInput = document.getElementById('endDate').value;
+            console.log('=== Начало расчета ===');
 
-            // Валидация
-            const errorDiv = document.getElementById('error');
-            const successDiv = document.getElementById('success');
+            try {
+                const latInput = document.getElementById('latitude').value;
+                const lonInput = document.getElementById('longitude').value;
+                const startDateInput = document.getElementById('startDate').value;
+                const endDateInput = document.getElementById('endDate').value;
 
-            if (isNaN(lat) || lat < -90 || lat > 90) {
-                errorDiv.textContent = '❌ Широта должна быть от -90 до 90';
-                errorDiv.style.display = 'block';
-                successDiv.style.display = 'none';
-                return;
-            }
-            if (isNaN(lon) || lon < -180 || lon > 180) {
-                errorDiv.textContent = '❌ Долгота должна быть от -180 до 180';
-                errorDiv.style.display = 'block';
-                successDiv.style.display = 'none';
-                return;
-            }
-            if (!startDateInput || !endDateInput) {
-                errorDiv.textContent = '❌ Выберите начальную и конечную дату';
-                errorDiv.style.display = 'block';
-                successDiv.style.display = 'none';
-                return;
-            }
+                console.log('Входные данные:', { latInput, lonInput, startDateInput, endDateInput });
 
-            const startDate = new Date(startDateInput + 'T00:00:00');
-            const endDate = new Date(endDateInput + 'T00:00:00');
+                const lat = parseFloat(latInput);
+                const lon = parseFloat(lonInput);
 
-            if (startDate >= endDate) {
-                errorDiv.textContent = '❌ Начальная дата должна быть раньше конечной';
-                errorDiv.style.display = 'block';
-                successDiv.style.display = 'none';
-                return;
-            }
+                // Валидация
+                const errorDiv = document.getElementById('error');
+                const successDiv = document.getElementById('success');
 
-            const daysDiff = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
-            if (daysDiff > 366) {
-                errorDiv.textContent = '❌ Период не должен превышать один год (366 дней)';
-                errorDiv.style.display = 'block';
-                successDiv.style.display = 'none';
-                return;
-            }
-
-            errorDiv.style.display = 'none';
-            successDiv.style.display = 'none';
-
-            // Сохраняем координаты
-            currentLat = lat;
-            currentLon = lon;
-
-            // Вычисляем данные
-            tableData = [];
-            const polarInfo = [];
-            let currentDate = new Date(startDate);
-
-            while (currentDate <= endDate) {
-                const times = SunCalc.getTimes(currentDate, lat, lon);
-                const dateStr = currentDate.toISOString().split('T')[0];
-
-                // Определяем тип освещенности
-                let type = 'Обычный';
-                let rowClass = '';
-
-                // Проверяем валидность восхода/заката
-                const sunriseValid = times.sunrise && !isNaN(times.sunrise.getTime());
-                const sunsetValid = times.sunset && !isNaN(times.sunset.getTime());
-
-                if (!sunriseValid || !sunsetValid) {
-                    // Проверяем высоту солнца в полдень
-                    const noonPos = SunCalc.getPosition(times.solarNoon, lat, lon);
-                    const altitudeDeg = noonPos.altitude * 180 / Math.PI;
-
-                    if (altitudeDeg > 0) {
-                        type = 'Полярный день';
-                        rowClass = 'polar-day';
-                    } else {
-                        type = 'Полярная ночь';
-                        rowClass = 'polar-night';
-                    }
+                if (isNaN(lat) || lat < -90 || lat > 90) {
+                    errorDiv.textContent = '❌ Широта должна быть от -90 до 90';
+                    errorDiv.style.display = 'block';
+                    successDiv.style.display = 'none';
+                    console.error('Неверная широта:', lat);
+                    return;
+                }
+                if (isNaN(lon) || lon < -180 || lon > 180) {
+                    errorDiv.textContent = '❌ Долгота должна быть от -180 до 180';
+                    errorDiv.style.display = 'block';
+                    successDiv.style.display = 'none';
+                    console.error('Неверная долгота:', lon);
+                    return;
+                }
+                if (!startDateInput || !endDateInput) {
+                    errorDiv.textContent = '❌ Выберите начальную и конечную дату';
+                    errorDiv.style.display = 'block';
+                    successDiv.style.display = 'none';
+                    console.error('Даты не выбраны');
+                    return;
                 }
 
-                tableData.push({
-                    date: dateStr,
-                    nightEnd: times.nightEnd,
-                    nauticalDawn: times.nauticalDawn,
-                    dawn: times.dawn,
-                    sunrise: times.sunrise,
-                    sunset: times.sunset,
-                    dusk: times.dusk,
-                    nauticalDusk: times.nauticalDusk,
-                    night: times.night,
-                    type: type,
-                    rowClass: rowClass
-                });
+                const startDate = new Date(startDateInput + 'T00:00:00');
+                const endDate = new Date(endDateInput + 'T00:00:00');
 
-                currentDate.setDate(currentDate.getDate() + 1);
-            }
+                console.log('Даты парсятся:', startDate, endDate);
 
-            // Находим периоды полярных дней/ночей
-            let currentPolar = null;
-            tableData.forEach((d, i) => {
-                if (d.type !== 'Обычный') {
-                    if (!currentPolar || currentPolar.type !== d.type) {
+                if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+                    errorDiv.textContent = '❌ Некорректный формат даты';
+                    errorDiv.style.display = 'block';
+                    successDiv.style.display = 'none';
+                    console.error('Даты некорректны');
+                    return;
+                }
+
+                if (startDate >= endDate) {
+                    errorDiv.textContent = '❌ Начальная дата должна быть раньше конечной';
+                    errorDiv.style.display = 'block';
+                    successDiv.style.display = 'none';
+                    console.error('Даты в неправильном порядке');
+                    return;
+                }
+
+                const daysDiff = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+                console.log('Дней в периоде:', daysDiff);
+
+                if (daysDiff > 366) {
+                    errorDiv.textContent = '❌ Период не должен превышать один год (366 дней)';
+                    errorDiv.style.display = 'block';
+                    successDiv.style.display = 'none';
+                    console.error('Слишком большой период');
+                    return;
+                }
+
+                errorDiv.style.display = 'none';
+                successDiv.style.display = 'none';
+
+                // Показываем результаты и загрузку
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('tableContainer').style.display = 'none';
+
+                // Сохраняем координаты
+                currentLat = lat;
+                currentLon = lon;
+
+                console.log('Начинаем вычисления для', daysDiff, 'дней');
+
+                // Используем setTimeout чтобы дать браузеру отрисовать "загрузка"
+                setTimeout(function() {
+                    try {
+                        // Вычисляем данные
+                        tableData = [];
+                        const polarInfo = [];
+                        let currentDate = new Date(startDate);
+                        let dayCount = 0;
+
+                        while (currentDate <= endDate) {
+                            dayCount++;
+                            if (dayCount % 10 === 0) {
+                                console.log('Обработано дней:', dayCount);
+                            }
+
+                            const times = SunCalc.getTimes(currentDate, lat, lon);
+                            const dateStr = currentDate.toISOString().split('T')[0];
+
+                            // Определяем тип освещенности
+                            let type = 'Обычный';
+                            let rowClass = '';
+
+                            // Проверяем валидность восхода/заката
+                            const sunriseValid = times.sunrise && !isNaN(times.sunrise.getTime());
+                            const sunsetValid = times.sunset && !isNaN(times.sunset.getTime());
+
+                            if (!sunriseValid || !sunsetValid) {
+                                // Проверяем высоту солнца в полдень
+                                const noonPos = SunCalc.getPosition(times.solarNoon, lat, lon);
+                                const altitudeDeg = noonPos.altitude * 180 / Math.PI;
+
+                                if (altitudeDeg > 0) {
+                                    type = 'Полярный день';
+                                    rowClass = 'polar-day';
+                                } else {
+                                    type = 'Полярная ночь';
+                                    rowClass = 'polar-night';
+                                }
+                            }
+
+                            tableData.push({
+                                date: dateStr,
+                                nightEnd: times.nightEnd,
+                                nauticalDawn: times.nauticalDawn,
+                                dawn: times.dawn,
+                                sunrise: times.sunrise,
+                                sunset: times.sunset,
+                                dusk: times.dusk,
+                                nauticalDusk: times.nauticalDusk,
+                                night: times.night,
+                                type: type,
+                                rowClass: rowClass
+                            });
+
+                            currentDate.setDate(currentDate.getDate() + 1);
+                        }
+
+                        console.log('Вычисления завершены. Всего записей:', tableData.length);
+
+                        // Находим периоды полярных дней/ночей
+                        let currentPolar = null;
+                        tableData.forEach((d, i) => {
+                            if (d.type !== 'Обычный') {
+                                if (!currentPolar || currentPolar.type !== d.type) {
+                                    if (currentPolar) polarInfo.push(currentPolar);
+                                    currentPolar = { type: d.type, start: d.date, end: d.date };
+                                } else {
+                                    currentPolar.end = d.date;
+                                }
+                            } else {
+                                if (currentPolar) {
+                                    polarInfo.push(currentPolar);
+                                    currentPolar = null;
+                                }
+                            }
+                        });
                         if (currentPolar) polarInfo.push(currentPolar);
-                        currentPolar = { type: d.type, start: d.date, end: d.date };
-                    } else {
-                        currentPolar.end = d.date;
+
+                        console.log('Полярных периодов:', polarInfo.length);
+
+                        // Заполняем таблицу
+                        const tbody = document.getElementById('tableBody');
+                        tbody.innerHTML = '';
+
+                        console.log('Заполняем таблицу...');
+
+                        tableData.forEach((d, index) => {
+                            const row = tbody.insertRow();
+                            row.className = d.rowClass;
+
+                            row.insertCell(0).textContent = d.date;
+                            row.insertCell(1).textContent = formatTime(d.nightEnd);
+                            row.insertCell(2).textContent = formatTime(d.nauticalDawn);
+                            row.insertCell(3).textContent = formatTime(d.dawn);
+                            row.insertCell(4).textContent = formatTime(d.sunrise);
+                            row.insertCell(5).textContent = formatTime(d.sunset);
+                            row.insertCell(6).textContent = formatTime(d.dusk);
+                            row.insertCell(7).textContent = formatTime(d.nauticalDusk);
+                            row.insertCell(8).textContent = formatTime(d.night);
+                            row.insertCell(9).textContent = d.type;
+                        });
+
+                        console.log('Таблица заполнена');
+
+                        // Отображаем информацию о местоположении
+                        const locationInfoDiv = document.getElementById('locationInfo');
+                        const locationDetailsDiv = document.getElementById('locationDetails');
+                        locationInfoDiv.style.display = 'block';
+                        locationDetailsDiv.innerHTML = `
+                            <div class="info-row">
+                                <span class="info-label">Широта</span>
+                                <span class="info-value">${lat}°</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Долгота</span>
+                                <span class="info-value">${lon}°</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Период</span>
+                                <span class="info-value">${tableData[0].date} — ${tableData[tableData.length-1].date}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Всего дней</span>
+                                <span class="info-value">${tableData.length}</span>
+                            </div>
+                        `;
+
+                        // Отображаем информацию о полярных периодах
+                        const polarInfoDiv = document.getElementById('polarInfo');
+                        const polarDetailsDiv = document.getElementById('polarDetails');
+                        if (polarInfo.length > 0) {
+                            polarInfoDiv.style.display = 'block';
+                            polarDetailsDiv.innerHTML = polarInfo.map(p => {
+                                const icon = p.type === 'Полярный день' ? '🌞' : '🌑';
+                                const startD = new Date(p.start);
+                                const endD = new Date(p.end);
+                                const days = Math.ceil((endD - startD) / (1000 * 60 * 60 * 24)) + 1;
+                                return `<div class="info-row">
+                                    <span class="info-label">${icon} ${p.type} (${days} дн.)</span>
+                                    <span class="info-value">${p.start} — ${p.end}</span>
+                                </div>`;
+                            }).join('');
+                        } else {
+                            polarInfoDiv.style.display = 'none';
+                        }
+
+                        // Скрываем загрузку, показываем таблицу
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('tableContainer').style.display = 'block';
+
+                        console.log('=== Расчет завершен успешно ===');
+
+                        // Прокручиваем к результату
+                        setTimeout(() => {
+                            document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 100);
+
+                    } catch (innerError) {
+                        console.error('Ошибка в вычислениях:', innerError);
+                        const errorDiv = document.getElementById('error');
+                        errorDiv.textContent = '❌ Ошибка при вычислении: ' + innerError.message;
+                        errorDiv.style.display = 'block';
+                        document.getElementById('loading').style.display = 'none';
                     }
-                } else {
-                    if (currentPolar) {
-                        polarInfo.push(currentPolar);
-                        currentPolar = null;
-                    }
-                }
-            });
-            if (currentPolar) polarInfo.push(currentPolar);
+                }, 100);
 
-            // Отображаем результат
-            document.getElementById('result').style.display = 'block';
-
-            // Заполняем таблицу
-            const tbody = document.getElementById('tableBody');
-            tbody.innerHTML = '';
-
-            tableData.forEach(d => {
-                const row = tbody.insertRow();
-                row.className = d.rowClass;
-
-                row.insertCell(0).textContent = d.date;
-                row.insertCell(1).textContent = formatTime(d.nightEnd);
-                row.insertCell(2).textContent = formatTime(d.nauticalDawn);
-                row.insertCell(3).textContent = formatTime(d.dawn);
-                row.insertCell(4).textContent = formatTime(d.sunrise);
-                row.insertCell(5).textContent = formatTime(d.sunset);
-                row.insertCell(6).textContent = formatTime(d.dusk);
-                row.insertCell(7).textContent = formatTime(d.nauticalDusk);
-                row.insertCell(8).textContent = formatTime(d.night);
-                row.insertCell(9).textContent = d.type;
-            });
-
-            // Отображаем информацию о местоположении
-            const locationInfoDiv = document.getElementById('locationInfo');
-            const locationDetailsDiv = document.getElementById('locationDetails');
-            locationInfoDiv.style.display = 'block';
-            locationDetailsDiv.innerHTML = `
-                <div class="info-row">
-                    <span class="info-label">Широта</span>
-                    <span class="info-value">${lat}°</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Долгота</span>
-                    <span class="info-value">${lon}°</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Период</span>
-                    <span class="info-value">${tableData[0].date} — ${tableData[tableData.length-1].date}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Всего дней</span>
-                    <span class="info-value">${tableData.length}</span>
-                </div>
-            `;
-
-            // Отображаем информацию о полярных периодах
-            const polarInfoDiv = document.getElementById('polarInfo');
-            const polarDetailsDiv = document.getElementById('polarDetails');
-            if (polarInfo.length > 0) {
-                polarInfoDiv.style.display = 'block';
-                polarDetailsDiv.innerHTML = polarInfo.map(p => {
-                    const icon = p.type === 'Полярный день' ? '🌞' : '🌑';
-                    const days = Math.ceil((new Date(p.end) - new Date(p.start)) / (1000 * 60 * 60 * 24)) + 1;
-                    return `<div class="info-row">
-                        <span class="info-label">${icon} ${p.type} (${days} дн.)</span>
-                        <span class="info-value">${p.start} — ${p.end}</span>
-                    </div>`;
-                }).join('');
-            } else {
-                polarInfoDiv.style.display = 'none';
+            } catch (error) {
+                console.error('Критическая ошибка:', error);
+                const errorDiv = document.getElementById('error');
+                errorDiv.textContent = '❌ Критическая ошибка: ' + error.message;
+                errorDiv.style.display = 'block';
             }
-
-            // Прокручиваем к результату
-            document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
         // Скачивание CSV
@@ -702,6 +800,8 @@
                 alert('❌ Сначала постройте таблицу');
                 return;
             }
+
+            console.log('Экспорт в CSV');
 
             // Формируем CSV с BOM для корректного отображения в Excel
             let csv = '﻿'; // BOM для UTF-8
@@ -743,6 +843,8 @@
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
+
+            console.log('CSV скачан:', filename);
         }
 
         // Скачивание Excel (HTML-таблица с расширением .xls)
@@ -751,6 +853,8 @@
                 alert('❌ Сначала постройте таблицу');
                 return;
             }
+
+            console.log('Экспорт в Excel');
 
             // Создаём HTML-таблицу для Excel
             let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
@@ -810,6 +914,8 @@
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
+
+            console.log('Excel скачан:', filename);
         }
     </script>
 </body>
