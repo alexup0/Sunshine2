@@ -1,4 +1,4 @@
-const CACHE_NAME = 'light-calc-v1';
+const CACHE_NAME = 'light-calc-v2';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -7,6 +7,9 @@ const urlsToCache = [
 
 // Установка Service Worker
 self.addEventListener('install', event => {
+  // Принудительно активируем новый SW
+  self.skipWaiting();
+
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
@@ -28,6 +31,9 @@ self.addEventListener('activate', event => {
           }
         })
       );
+    }).then(() => {
+      // Берем контроль над всеми страницами
+      return self.clients.claim();
     })
   );
 });
