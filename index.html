@@ -114,6 +114,19 @@
             background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
         }
 
+        .btn-download {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            font-size: 14px;
+            padding: 10px;
+        }
+
+        .download-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
         #result {
             margin-top: 30px;
             display: none;
@@ -288,6 +301,11 @@
                 <div id="polarDetails"></div>
             </div>
 
+            <div class="download-group">
+                <button class="btn-download" onclick="downloadCSV()">📥 Скачать CSV</button>
+                <button class="btn-download" onclick="downloadExcel()">📥 Скачать Excel</button>
+            </div>
+
             <div class="table-container">
                 <table id="dataTable">
                     <thead>
@@ -403,6 +421,9 @@
     </script>
 
     <script>
+        // Глобальная переменная для хранения данных
+        let tableData = [];
+
         // Устанавливаем значения по умолчанию
         window.onload = function() {
             const today = new Date();
@@ -458,8 +479,13 @@
         }
 
         function formatTime(date) {
-            if (!date || isNaN(date.getTime())) return '—';
+            if (!date || isNaN(date.getTime())) return '';
             return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatTimeForExport(date) {
+            if (!date || isNaN(date.getTime())) return '';
+            return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         }
 
         function calculateLight() {
@@ -489,7 +515,7 @@
             errorDiv.style.display = 'none';
 
             // Вычисляем данные
-            const data = [];
+            tableData = [];
             const polarInfo = [];
             let currentDate = new Date(startDate);
 
@@ -503,15 +529,15 @@
                 if (!times.sunrise || !times.sunset || isNaN(times.sunrise.getTime()) || isNaN(times.sunset.getTime())) {
                     const noonPos = SunCalc.getPosition(times.solarNoon, lat, lon);
                     if (noonPos.altitude > 0) {
-                        type = '🌞 Полярный день';
+                        type = 'Полярный день';
                         rowClass = 'polar-day';
                     } else {
-                        type = '🌑 Полярная ночь';
+                        type = 'Полярная ночь';
                         rowClass = 'polar-night';
                     }
                 }
 
-                data.push({
+                tableData.push({
                     date: dateStr,
                     nightEnd: times.nightEnd,
                     nauticalDawn: times.nauticalDawn,
@@ -530,7 +556,7 @@
 
             // Находим периоды полярных дней/ночей
             let currentPolar = null;
-            data.forEach((d, i) => {
+            tableData.forEach((d, i) => {
                 if (d.type !== 'Обычный') {
                     if (!currentPolar || currentPolar.type !== d.type) {
                         if (currentPolar) polarInfo.push(currentPolar);
@@ -554,19 +580,19 @@
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
 
-            data.forEach(d => {
+            tableData.forEach(d => {
                 const row = tbody.insertRow();
                 row.className = d.rowClass;
 
                 row.insertCell(0).textContent = d.date;
-                row.insertCell(1).textContent = formatTime(d.nightEnd);
-                row.insertCell(2).textContent = formatTime(d.nauticalDawn);
-                row.insertCell(3).textContent = formatTime(d.dawn);
-                row.insertCell(4).textContent = formatTime(d.sunrise);
-                row.insertCell(5).textContent = formatTime(d.sunset);
-                row.insertCell(6).textContent = formatTime(d.dusk);
-                row.insertCell(7).textContent = formatTime(d.nauticalDusk);
-                row.insertCell(8).textContent = formatTime(d.night);
+                row.insertCell(1).textContent = formatTime(d.nightEnd) || '—';
+                row.insertCell(2).textContent = formatTime(d.nauticalDawn) || '—';
+                row.insertCell(3).textContent = formatTime(d.dawn) || '—';
+                row.insertCell(4).textContent = formatTime(d.sunrise) || '—';
+                row.insertCell(5).textContent = formatTime(d.sunset) || '—';
+                row.insertCell(6).textContent = formatTime(d.dusk) || '—';
+                row.insertCell(7).textContent = formatTime(d.nauticalDusk) || '—';
+                row.insertCell(8).textContent = formatTime(d.night) || '—';
                 row.insertCell(9).textContent = d.type;
             });
 
@@ -585,11 +611,11 @@
                 </div>
                 <div class="info-row">
                     <span class="info-label">Период</span>
-                    <span class="info-value">${data[0].date} — ${data[data.length-1].date}</span>
+                    <span class="info-value">${tableData[0].date} — ${tableData[tableData.length-1].date}</span>
                 </div>
                 <div class="info-row">
                     <span class="info-label">Всего дней</span>
-                    <span class="info-value">${data.length}</span>
+                    <span class="info-value">${tableData.length}</span>
                 </div>
             `;
 
@@ -599,8 +625,9 @@
             if (polarInfo.length > 0) {
                 polarInfoDiv.style.display = 'block';
                 polarDetailsDiv.innerHTML = polarInfo.map(p => {
+                    const icon = p.type === 'Полярный день' ? '🌞' : '🌑';
                     return `<div class="info-row">
-                        <span class="info-label">${p.type}</span>
+                        <span class="info-label">${icon} ${p.type}</span>
                         <span class="info-value">${p.start} — ${p.end}</span>
                     </div>`;
                 }).join('');
@@ -610,6 +637,122 @@
 
             // Прокручиваем к результату
             document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // Скачивание CSV
+        function downloadCSV() {
+            if (tableData.length === 0) {
+                alert('Сначала постройте таблицу');
+                return;
+            }
+
+            const lat = document.getElementById('latitude').value;
+            const lon = document.getElementById('longitude').value;
+
+            // Формируем CSV с BOM для корректного отображения в Excel
+            let csv = '﻿'; // BOM для UTF-8
+            csv += 'Дата;Астрономические сумерки (утро);Навигационные сумерки (утро);Гражданские сумерки (утро);Восход;Заход;Гражданские сумерки (вечер);Навигационные сумерки (вечер);Астрономические сумерки (вечер);Тип дня
+';
+
+            tableData.forEach(d => {
+                csv += `${d.date};`;
+                csv += `${formatTimeForExport(d.nightEnd)};`;
+                csv += `${formatTimeForExport(d.nauticalDawn)};`;
+                csv += `${formatTimeForExport(d.dawn)};`;
+                csv += `${formatTimeForExport(d.sunrise)};`;
+                csv += `${formatTimeForExport(d.sunset)};`;
+                csv += `${formatTimeForExport(d.dusk)};`;
+                csv += `${formatTimeForExport(d.nauticalDusk)};`;
+                csv += `${formatTimeForExport(d.night)};`;
+                csv += `${d.type}
+`;
+            });
+
+            // Добавляем информацию о координатах в конце
+            csv += `
+Широта;${lat}
+`;
+            csv += `Долгота;${lon}
+`;
+
+            // Создаём и скачиваем файл
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+
+            link.setAttribute('href', url);
+            link.setAttribute('download', `osveshchennost_${lat}_${lon}_${tableData[0].date}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Скачивание Excel (HTML-таблица с расширением .xls)
+        function downloadExcel() {
+            if (tableData.length === 0) {
+                alert('Сначала постройте таблицу');
+                return;
+            }
+
+            const lat = document.getElementById('latitude').value;
+            const lon = document.getElementById('longitude').value;
+
+            // Создаём HTML-таблицу для Excel
+            let html = '<html xmlns:x="urn:schemas-microsoft-com:office:excel">';
+            html += '<head><meta charset="UTF-8"></head><body>';
+            html += '<table border="1">';
+
+            // Заголовок
+            html += '<tr style="background-color: #667eea; color: white; font-weight: bold;">';
+            html += '<td>Дата</td>';
+            html += '<td>Астр. утро</td>';
+            html += '<td>Навиг. утро</td>';
+            html += '<td>Гражд. утро</td>';
+            html += '<td>Восход</td>';
+            html += '<td>Заход</td>';
+            html += '<td>Гражд. вечер</td>';
+            html += '<td>Навиг. вечер</td>';
+            html += '<td>Астр. вечер</td>';
+            html += '<td>Тип дня</td>';
+            html += '</tr>';
+
+            // Данные
+            tableData.forEach(d => {
+                const bgColor = d.rowClass === 'polar-day' ? '#fff9c4' : 
+                               d.rowClass === 'polar-night' ? '#e0e0e0' : 'white';
+                html += `<tr style="background-color: ${bgColor}">`;
+                html += `<td>${d.date}</td>`;
+                html += `<td>${formatTimeForExport(d.nightEnd)}</td>`;
+                html += `<td>${formatTimeForExport(d.nauticalDawn)}</td>`;
+                html += `<td>${formatTimeForExport(d.dawn)}</td>`;
+                html += `<td>${formatTimeForExport(d.sunrise)}</td>`;
+                html += `<td>${formatTimeForExport(d.sunset)}</td>`;
+                html += `<td>${formatTimeForExport(d.dusk)}</td>`;
+                html += `<td>${formatTimeForExport(d.nauticalDusk)}</td>`;
+                html += `<td>${formatTimeForExport(d.night)}</td>`;
+                html += `<td>${d.type}</td>`;
+                html += '</tr>';
+            });
+
+            // Добавляем координаты
+            html += '<tr><td colspan="10"></td></tr>';
+            html += `<tr><td><b>Широта</b></td><td colspan="9">${lat}°</td></tr>`;
+            html += `<tr><td><b>Долгота</b></td><td colspan="9">${lon}°</td></tr>`;
+
+            html += '</table></body></html>';
+
+            // Создаём и скачиваем файл
+            const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+
+            link.setAttribute('href', url);
+            link.setAttribute('download', `osveshchennost_${lat}_${lon}_${tableData[0].date}.xls`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
     </script>
 </body>
